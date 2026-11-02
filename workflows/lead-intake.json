@@ -1,0 +1,110 @@
+{
+  "name": "Приём заявки: Telegram и LLM",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ae902139-ec20-4a25-a1a0-3723aa80bc39",
+      "name": "Telegram Trigger"
+    },
+    {
+      "parameters": {
+        "jsCode": "const OPENAI_KEY = 'YOUR_OPENAI_API_KEY';\nconst item = $input.first().json;\nconst msg = item.message || {};\nconst chatId = msg.chat && msg.chat.id;\nconst text = String(msg.text || '').trim();\nif (!chatId || !text || text.startsWith('/start')) {\n  return [{ json: { chatId, reply: 'Пришлите заявку одним сообщением: имя, телефон и что нужно.', skip: true } }];\n}\n\nconst resp = await this.helpers.httpRequest({\n  method: 'POST',\n  url: 'https://api.openai.com/v1/chat/completions',\n  headers: {\n    Authorization: 'Bearer ' + OPENAI_KEY,\n    'Content-Type': 'application/json',\n  },\n  body: {\n    model: 'gpt-4o-mini',\n    temperature: 0,\n    response_format: { type: 'json_object' },\n    messages: [\n      { role: 'system', content: 'Извлеки заявку. Верни только JSON {\\\"name\\\":\\\"\\\",\\\"phone\\\":\\\"\\\",\\\"request\\\":\\\"\\\"}. Пустые поля оставь пустыми строками.' },\n      { role: 'user', content: text },\n    ],\n  },\n  json: true,\n});\n\nlet parsed = { name: '', phone: '', request: text };\ntry {\n  parsed = JSON.parse(resp.choices[0].message.content);\n} catch (e) {}\n\nreturn [{\n  json: {\n    chatId,\n    name: parsed.name || '',\n    phone: parsed.phone || '',\n    request: parsed.request || text,\n    sourceText: text,\n    reply: 'Заявка принята. Имя: ' + (parsed.name || '—') + ', телефон: ' + (parsed.phone || '—'),\n    skip: false,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        280,
+        0
+      ],
+      "id": "c277b7ca-f18a-44c6-87d2-df632540832b",
+      "name": "Разобрать заявку"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://example.com/hooks/YOUR_INTAKE_WEBHOOK",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { name: $json.name, phone: $json.phone, request: $json.request, chatId: $json.chatId } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        560,
+        0
+      ],
+      "id": "65d55eb7-64a4-44bc-87a4-fc8f20b96907",
+      "name": "Отправить в CRM"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Разобрать заявку').item.json.chatId }}",
+        "text": "={{ $('Разобрать заявку').item.json.reply }}",
+        "additionalFields": {}
+      },
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        840,
+        0
+      ],
+      "id": "3cff8211-3b28-433b-963b-b39b10414eb5",
+      "name": "Ответ клиенту"
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Разобрать заявку",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Разобрать заявку": {
+      "main": [
+        [
+          {
+            "node": "Отправить в CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Отправить в CRM": {
+      "main": [
+        [
+          {
+            "node": "Ответ клиенту",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
